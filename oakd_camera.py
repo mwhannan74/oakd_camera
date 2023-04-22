@@ -14,6 +14,9 @@
 # The code in this file is based on the code from Luxonis Tutorials and Code Samples.
 # https://docs.luxonis.com/projects/api/en/latest/tutorials/hello_world/
 # https://docs.luxonis.com/projects/api/en/latest/tutorials/code_samples/
+#
+# This website provides a good overview of the camera and how to use the NN pipeline.
+# https://pyimagesearch.com/2022/12/19/oak-d-understanding-and-running-neural-network-inference-with-depthai-api/
 
 #--------------------------------------------------------------------------------------------------------------------
 # pip install numpy opencv-python depthai blobconverter
@@ -41,14 +44,13 @@ cam_rgb.setFps(10)
 # This is the only way that I know how to create a NN, even if it is not MobileNet.
 # Works with pedestrian-and-vehicle-detector-adas-0001
 nn = pipeline.createMobileNetDetectionNetwork()
+#nn = pipeline.createNeuralNetwork()
 
 # Filter out the detections that are below a confidence threshold. Confidence can be anywhere between <0..1>.
 # Only works with createMobileNetDetectionNetwork()
 nn.setConfidenceThreshold(0.5)
 
-
 #nn = pipeline.createMobileNetSpatialDetectionNetwork()
-#nn = pipeline.createNeuralNetwork()
 #nn = pipeline.createYoloDetectionNetwork()
 #nn = pipeline.createYoloSpatialDetectionNetwork()
 
@@ -61,6 +63,9 @@ nn.setConfidenceThreshold(0.5)
 
 #--------------------------------------------------------------------------------------------------------------------
 # Configure NN and camera based on the model selected
+# OpenVINO Documentation -> https://docs.openvino.ai/2022.1/index.html
+# OpenVINO Model Zoo -> https://docs.openvino.ai/2022.1/model_zoo.html
+
 model = "mobilenet"
 #model = "ped-veh"
 
