@@ -1,74 +1,114 @@
 # -*- coding: utf-8 -*-
 
-# pip install numpy opencv-python depthai blobconverter
+#--------------------------------------------------------------------------------------------------------------------
+# Code for OAK-D camera from Luxonis.
+# Robotics Vision Core 2 (RVC2) with 16x SHAVE cores
+#  -> Streaming Hybrid Architecture Vector Engine (SHAVE)
+# Color camera sensor = 12MP (4032x3040 via ISP stream)
+# Depth perception: baseline of 7.5cm
+#  -> Ideal range: 70cm - 8m
+#  -> MinZ: ~20cm (400P, extended), ~35cm (400P OR 800P, extended), ~70cm (800P)
+#  -> MaxZ: ~15 meters with a variance of 10% (depth accuracy evaluation)
+# https://docs.luxonis.com/projects/hardware/en/latest/pages/BW1098OAK.html
+#
+# The code in this file is based on the code from Luxonis Tutorials and Code Samples.
+# https://docs.luxonis.com/projects/api/en/latest/tutorials/hello_world/
+# https://docs.luxonis.com/projects/api/en/latest/tutorials/code_samples/
 
+#--------------------------------------------------------------------------------------------------------------------
+# pip install numpy opencv-python depthai blobconverter
 import numpy as np  # numpy package -> manipulate the packet data returned by depthai
 import cv2  # opencv-python  package -> display the video stream
 import depthai as dai  # depthai package -> access the camera and its data packets
 import blobconverter  # blobconverter package -> compile and download MyriadX neural network blobs
 
-# OAK-D Camera
-# Robotics Vision Core 2 (RVC2) with 16x SHAVE cores
-#  -> Streaming Hybrid Architecture Vector Engine (SHAVE)
-# Color camera sensor = 12MP (4032x3040 via ISP stream)
-
 
 #--------------------------------------------------------------------------------------------------------------------
-# Pipeline tells DepthAI what operations to perform when running - you define all of the resources used and flows here
+# Pipeline tells DepthAI what operations to perform when running
 pipeline = dai.Pipeline()
 
 
 #--------------------------------------------------------------------------------------------------------------------
-# Color camera as the output
+# Color camera setup
+# https://docs.luxonis.com/projects/api/en/latest/components/nodes/color_camera/?highlight=setPreviewSize
+# https://docs.luxonis.com/projects/api/en/latest/tutorials/dispaying_detections/#
+# https://docs.luxonis.com/projects/api/en/latest/tutorials/maximize_fov/
 cam_rgb = pipeline.createColorCamera()
-
 cam_rgb.setInterleaved(False)
 cam_rgb.setFps(10)
 
-# Preview frame size used to feed the NN. MobileNet requires 300x300
-#cam_rgb.setPreviewSize(300, 300) #mobilenet-ssd
-cam_rgb.setPreviewSize(672, 384) #pedestrian-and-vehicle-detector-adas-0001
+# Neural network that will produce the detections
+# This is the only way that I know how to create a NN, even if it is not MobileNet.
+# Works with pedestrian-and-vehicle-detector-adas-0001
+nn = pipeline.createMobileNetDetectionNetwork()
 
+# Filter out the detections that are below a confidence threshold. Confidence can be anywhere between <0..1>.
+# Only works with createMobileNetDetectionNetwork()
+nn.setConfidenceThreshold(0.5)
+
+
+#nn = pipeline.createMobileNetSpatialDetectionNetwork()
+#nn = pipeline.createNeuralNetwork()
+#nn = pipeline.createYoloDetectionNetwork()
+#nn = pipeline.createYoloSpatialDetectionNetwork()
+
+#pipeline.createStereoDepth()
+#pipeline.createAprilTag()
+#pipeline.createFeatureTracker()
+#pipeline.createObjectTracker()
+#pipeline.createIMU()
+
+
+#--------------------------------------------------------------------------------------------------------------------
+# Configure NN and camera based on the model selected
+model = "mobilenet"
+#model = "ped-veh"
+
+if model == "mobilenet":
+    print("Model: mobilenet-ssd")
+
+    # Blob is the Neural Network file, compiled for MyriadX. It contains both the definition and weights of the model.
+    # We're using a blobconverter tool to retrieve the blob automatically from OpenVINO Model Zoo.
+    nn.setBlobPath(blobconverter.from_zoo(name='mobilenet-ssd', shaves=6))
+    labelMap = ["background", "aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car", "cat", "chair", "cow", "diningtable", "dog", "horse", "motorbike", "person", "pottedplant", "sheep", "sofa", "train", "tvmonitor"]
+
+    # Configure camera pipeline
+    cam_rgb.setPreviewSize(300, 300) # Preview frame size used to feed the NN --> FOV will be much narrow than raw image
+    cam_rgb.setVideoSize(720,720)
+
+elif model == "ped-veh":
+    print("Model: pedestrian-and-vehicle-detector-adas-0001")
+    nn.setBlobPath(blobconverter.from_zoo(name='pedestrian-and-vehicle-detector-adas-0001', shaves=6))
+    labelMap = ["unknown", "vehicle", "pedestrian"]
+    cam_rgb.setPreviewSize(672, 384) # Preview frame size used to feed the NN -> FOV will be almost same size as raw image
+    cam_rgb.setVideoSize(1260,720)
+
+elif model == "coco":
+     print("Model: COCO")
+     #nn.
+     labelMap = ["person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light", "fire hydrant",
+                 "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra",
+                 "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball",
+                 "kite", "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket", "bottle", "wine glass",
+                 "cup", "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog",
+                 "pizza", "donut", "cake", "chair", "couch", "potted plant", "bed", "dining table", "toilet", "tv", "laptop",
+                 "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book",
+                 "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush", "unknown"]
+
+else:
+    print("ERROR: Unknown NN model = " + model)
+    exit()
+
+
+#--------------------------------------------------------------------------------------------------------------------
 # higher resolution output image for viewing (must have same aspect ratio as preview for overlay)
 # To get the full FOV of a sensor you need to use its max resolution (or 1/N of it, if supported).
 # You need to set full 12MP resolution (no 6MP support), then use setIspScale() to downscale to smaller size.
 # 4k = 3840x2160 (limitation of "video" stream)
 cam_rgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_4_K)
+
 #cam_rgb.setIspScale(1,2) # 1/2 scale = 1920x1080
 cam_rgb.setIspScale(1,3) # 1/3 scale = 1280x720
-
-
-#cam_rgb.setVideoSize(720,720) #mobilenet-ssd
-cam_rgb.setVideoSize(1260,720)  #pedestrian-and-vehicle-detector-adas-0001
-
-
-
-#--------------------------------------------------------------------------------------------------------------------
-# Neural network that will produce the detections
-nn = pipeline.createMobileNetDetectionNetwork()
-
-# Blob is the Neural Network file, compiled for MyriadX. It contains both the definition and weights of the model.
-# We're using a blobconverter tool to retrieve the blob automatically from OpenVINO Model Zoo.
-
-#nn.setBlobPath(blobconverter.from_zoo(name='mobilenet-ssd', shaves=6))
-#labelMap = ["background", "aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car", "cat", "chair", "cow", "diningtable", "dog", "horse", "motorbike", "person", "pottedplant", "sheep", "sofa", "train", "tvmonitor"]
-
-nn.setBlobPath(blobconverter.from_zoo(name='pedestrian-and-vehicle-detector-adas-0001', shaves=6))
-labelMap = ["unknown", "vehicle", "pedestrian"]
-
-# COCO
-# labelMap = ["person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light", "fire hydrant",
-#             "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra",
-#             "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball",
-#             "kite", "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket", "bottle", "wine glass",
-#             "cup", "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog",
-#             "pizza", "donut", "cake", "chair", "couch", "potted plant", "bed", "dining table", "toilet", "tv", "laptop",
-#             "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book",
-#             "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush", "unknown"]
-
-
-# Filter out the detections that are below a confidence threshold. Confidence can be anywhere between <0..1>.
-nn.setConfidenceThreshold(0.5)
 
 # Link the camera 'preview' output to the neural network detection input, so that it can produce detections.
 cam_rgb.preview.link(nn.input)
